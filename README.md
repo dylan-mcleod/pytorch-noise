@@ -5,5 +5,4 @@ Dependencies:
 - numpy
 - PyTorch (compiled with CUDA support)
 - cv2 (to run the examples)
-
-...and a CUDA toolkit, to compile the CUDA/C++ extension.
+- a CUDA toolkit, to compile the CUDA/C++ extension.
