@@ -167,22 +167,22 @@ template<typename scalar_t>
 __global__
 void kernel_range3D(
 		torch::PackedTensorAccessor<scalar_t,4,torch::RestrictPtrTraits,size_t> out,
-		torch::PackedTensorAccessor<scalar_t,1,torch::RestrictPtrTraits,size_t> start, 
+		float3 start, 
 		float3 step_size,
-		dim3 steps) {
+		dim3   steps) {
 		const int x = blockIdx.x * blockDim.x + threadIdx.x;
 		const int y = blockIdx.y * blockDim.y + threadIdx.y;
 		const int z = blockIdx.z * blockDim.z + threadIdx.z;
 		
 	if (x < out.size(0) && y < out.size(1) && z < out.size(2)) {
-		out[x][y][z][0] = start[0] + x*step_size.x;
-		out[x][y][z][1] = start[1] + y*step_size.y;
-		out[x][y][z][2] = start[2] + z*step_size.z;	
+		out[x][y][z][0] = start.x + x*step_size.x;
+		out[x][y][z][1] = start.y + y*step_size.y;
+		out[x][y][z][2] = start.z + z*step_size.z;	
 	}
 }
 
 torch::Tensor eval_range3D(
-		torch::Tensor start, 
+		float startX, float startY, float startZ, 
 		float stepSizeX, float stepSizeY, float stepSizeZ, 
 		int stepX, int stepY, int stepZ) {
 	dim3 steps(stepX, stepY, stepZ);
@@ -195,7 +195,7 @@ torch::Tensor eval_range3D(
 	
 		kernel_range3D<scalar_t><<<blocks, threads>>>(
 			out.      packed_accessor<scalar_t,4,torch::RestrictPtrTraits,size_t>(),
-			start.    packed_accessor<scalar_t,1,torch::RestrictPtrTraits,size_t>(),
+			make_float3(startX,    startY,    startZ   ),
 			make_float3(stepSizeX, stepSizeY, stepSizeZ),
 			steps
 		);
@@ -206,200 +206,3 @@ torch::Tensor eval_range3D(
 	
 	return out;
 }
-	
-
-/*
-template<typename scalar_t>
-struct Float_Args {
-	typedef torch::PackedTensorAccessor<scalar_t,1,torch::RestrictPtrTraits,size_t> type;
-};
-typedef torch::PackedTensorAccessor<long long,1,torch::RestrictPtrTraits,size_t> Int_Args;
-
-template<typename scalar_t>
-__device__ __forceinline__
-float call_simplexNoise(float3 pt, Float_Args<scalar_t>::type flt_args, Int_Args int_args) {
-	return cudaNoise::simplexNoise(pt, flt_args[0], int_args[0]);
-}
-
-template<typename scalar_t>
-__device__ __forceinline__
-float call_checker(float3 pt, Float_Args<scalar_t>::type flt_args, Int_Args int_args) {
-	return cudaNoise::checker(pt, flt_args[0], int_args[0]);
-}
-
-template<typename scalar_t>
-__device__ __forceinline__
-float call_spots(float3 pt, Float_Args<scalar_t>::type flt_args, Int_Args int_args) {
-	return cudaNoise::spots(pt, flt_args[0], int_args[0], flt_args[1], int_args[1], int_args[2], flt_args[2], cudaNoise::profileShape(int_args[3]));
-}
-
-template<typename scalar_t>
-__device__ __forceinline__
-float call_worleyNoise(float3 pt, Float_Args<scalar_t>::type flt_args, Int_Args int_args) {
-	return cudaNoise::worleyNoise(pt, flt_args[0], int_args[0], flt_args[1], int_args[1], int_args[2], flt_args[2]);
-}
-
-template<typename scalar_t>
-__device__ __forceinline__
-float call_discreteNoise(float3 pt, Float_Args<scalar_t>::type flt_args, Int_Args int_args) {
-	return cudaNoise::discreteNoise(pt, flt_args[0], int_args[0]);
-}
-
-template<typename scalar_t>
-__device__ __forceinline__
-float call_linearValue(float3 pt, Float_Args<scalar_t>::type flt_args, Int_Args int_args) {
-	return cudaNoise::linearValue(pt, flt_args[0], int_args[0]);
-}
-
-template<typename scalar_t>
-__device__ __forceinline__
-float call_fadedValue(float3 pt, Float_Args<scalar_t>::type flt_args, Int_Args int_args) {
-	return cudaNoise::fadedValue(pt, flt_args[0], int_args[0]);
-}
-
-template<typename scalar_t>
-__device__ __forceinline__
-float call_cubicValue(float3 pt, Float_Args<scalar_t>::type flt_args, Int_Args int_args) {
-	return cudaNoise::cubicValue(pt, flt_args[0], int_args[0]);
-}
-
-template<typename scalar_t>
-__device__ __forceinline__
-float call_perlinNoise(float3 pt, Float_Args<scalar_t>::type flt_args, Int_Args int_args) {
-	return cudaNoise::perlinNoise(pt, flt_args[0], int_args[0]);
-}
-
-template<typename scalar_t>
-__device__ __forceinline__
-float call_repeaterPerlin(float3 pt, Float_Args<scalar_t>::type flt_args, Int_Args int_args) {
-	return cudaNoise::repeaterPerlin(pt, flt_args[0], int_args[0], int_args[1], flt_args[1], flt_args[2]);
-}
-
-template<typename scalar_t>
-__device__ __forceinline__
-float call_repeaterPerlinAbs(float3 pt, Float_Args<scalar_t>::type flt_args, Int_Args int_args) {
-	return cudaNoise::repeaterPerlinAbs(pt, flt_args[0], int_args[0], int_args[1], flt_args[1], flt_args[2]);
-}
-
-template<typename scalar_t>
-__device__ __forceinline__
-float call_repeaterSimplex(float3 pt, Float_Args<scalar_t>::type flt_args, Int_Args int_args) {
-	return cudaNoise::repeaterSimplex(pt, flt_args[0], int_args[0], int_args[1], flt_args[1], flt_args[2]);
-}
-
-template<typename scalar_t>
-__device__ __forceinline__
-float call_repeaterSimplexAbs(float3 pt, Float_Args<scalar_t>::type flt_args, Int_Args int_args) {
-	return cudaNoise::repeaterSimplexAbs(pt, flt_args[0], int_args[0], int_args[1], flt_args[1], flt_args[2]);
-}
-
-template<typename scalar_t>
-__device__ __forceinline__
-float call_repeater(float3 pt, Float_Args<scalar_t>::type flt_args, Int_Args int_args) {
-	return cudaNoise::repeater(pt, flt_args[0], int_args[0], int_args[1], flt_args[1], flt_args[2], cudaNoise::basisFunction(int_args[2]));
-}
-
-template<typename scalar_t>
-__device__ __forceinline__
-float call_fractalSimplex(float3 pt, Float_Args<scalar_t>::type flt_args, Int_Args int_args) {
-	return cudaNoise::fractalSimplex(pt, flt_args[0], int_args[0], flt_args[1], int_args[1], flt_args[2], flt_args[3]);
-}
-
-template<typename scalar_t>
-__device__ __forceinline__
-float call_turbulence(float3 pt, Float_Args<scalar_t>::type flt_args, Int_Args int_args) {
-	return cudaNoise::turbulence(pt, flt_args[0], flt_args[1], int_args[0], flt_args[2], cudaNoise::basisFunction(int_args[1]), cudaNoise::basisFunction(int_args[2]));
-}
-
-template<typename scalar_t>
-__device__ __forceinline__
-float call_repeaterTurbulence(float3 pt, Float_Args<scalar_t>::type flt_args, Int_Args int_args) {
-	return cudaNoise::repeaterTurbulence(pt, flt_args[0], flt_args[1], int_args[0], flt_args[2], int_args[1], cudaNoise::basisFunction(int_args[2]), cudaNoise::basisFunction(int_args[3]));
-}
-
-
-
-
-#define MAKE_KERNEL( NAME )\
-template<typename scalar_t>\
-__global__ void kernel_##NAME(\
-		const torch::PackedTensorAccessor<scalar_t,4,torch::RestrictPtrTraits,size_t> points,\
-		      torch::PackedTensorAccessor<scalar_t,3,torch::RestrictPtrTraits,size_t> out,\
-		Float_Args<scalar_t>::type flt_args,\
-		Int_Args int_args) {\
-	\
-	const int x = blockIdx.x * blockDim.x + threadIdx.x;\
-	const int y = blockIdx.y * blockDim.y + threadIdx.y;\
-	const int z = blockIdx.z * blockDim.z + threadIdx.z;\
-	if (x < points.size(0) && y < points.size(1) && z < points.size(2)) {\
-		out[x][y][z] = call_##NAME <scalar_t>(make_float3(points[x][y][z][0],points[x][y][z][1],points[x][y][z][2]), flt_args, int_args);\
-	}\
-}
-
-#define MAKE_EVAL( NAME )\
-torch::Tensor eval_##NAME(torch::Tensor points, torch::Tensor flt_args, torch::Tensor int_args) {\
-	\
-	CHECK_INPUT(points);\
-	\
-	auto out = torch::empty({points.size(0),points.size(1),points.size(2)}, at::kCUDA);\
-	\
-	const dim3 threads(32,16,1);\
-	const dim3 blocks((points.size(0)+threads.x-1)/threads.x,(points.size(1)+threads.y-1)/threads.y,(points.size(2)+threads.z-1)/threads.z);\
-	\
-	AT_DISPATCH_FLOATING_TYPES(points.type(), "simplex3_forward_cuda", ([&] {\
-	\
-		kernel_##NAME<scalar_t><<<blocks, threads>>>(\
-			points.  packed_accessor<scalar_t, 4,torch::RestrictPtrTraits,size_t>(),\
-			out.     packed_accessor<scalar_t, 3,torch::RestrictPtrTraits,size_t>(),\
-			flt_args.packed_accessor<scalar_t, 1,torch::RestrictPtrTraits,size_t>(),\
-			int_args.packed_accessor<long long,1,torch::RestrictPtrTraits,size_t>()\
-		);\
-	\
-	}));\
-	\
-	return out;\
-}
-
-#define MAKE_EVAL_( NAME )\
-torch::Tensor eval_##NAME##_(torch::Tensor out, torch::Tensor points, torch::Tensor flt_args, torch::Tensor int_args) {\
-	\
-	CHECK_INPUT(points);\
-	CHECK_INPUT(out);\
-	\
-	const dim3 threads(32,16,1);\
-	const dim3 blocks((points.size(0)+threads.x-1)/threads.x,(points.size(1)+threads.y-1)/threads.y,(points.size(2)+threads.z-1)/threads.z);\
-	\
-	AT_DISPATCH_FLOATING_TYPES(points.type(), "simplex3_forward_cuda", ([&] {\
-	\
-		kernel_##NAME<scalar_t><<<blocks, threads>>>(\
-			points.  packed_accessor<scalar_t, 4,torch::RestrictPtrTraits,size_t>(),\
-			out.     packed_accessor<scalar_t, 3,torch::RestrictPtrTraits,size_t>(),\
-			flt_args.packed_accessor<scalar_t, 1,torch::RestrictPtrTraits,size_t>(),\
-			int_args.packed_accessor<long long,1,torch::RestrictPtrTraits,size_t>()\
-		);\
-	\
-	}));\
-	\
-	return out;\
-}
-
-#define MAKE_NOISE_FUN( NAME ) MAKE_KERNEL(NAME); MAKE_EVAL(NAME); MAKE_EVAL_(NAME);
-
-MAKE_NOISE_FUN(simplexNoise)
-MAKE_NOISE_FUN(checker)
-MAKE_NOISE_FUN(spots)
-MAKE_NOISE_FUN(worleyNoise)
-MAKE_NOISE_FUN(discreteNoise)
-MAKE_NOISE_FUN(linearValue)
-MAKE_NOISE_FUN(fadedValue)
-MAKE_NOISE_FUN(cubicValue)
-MAKE_NOISE_FUN(perlinNoise)
-MAKE_NOISE_FUN(repeaterPerlin)
-MAKE_NOISE_FUN(repeaterPerlinAbs)
-MAKE_NOISE_FUN(repeaterSimplex)
-MAKE_NOISE_FUN(repeaterSimplexAbs)
-MAKE_NOISE_FUN(repeater)
-MAKE_NOISE_FUN(fractalSimplex)
-MAKE_NOISE_FUN(turbulence)
-MAKE_NOISE_FUN(repeaterTurbulence)
-*/

@@ -3,7 +3,7 @@ import pytorch_noise_cuda as noise_lib
    
   
 def range3D(start, step_size, steps):
-    return noise_lib.range3D(start, step_size[0], step_size[1], step_size[2], steps[0], steps[1], steps[2])
+    return noise_lib.range3D(start[0], start[1], start[2], step_size[0], step_size[1], step_size[2], steps[0], steps[1], steps[2])
             
             
 
@@ -47,7 +47,8 @@ class NoiseFun:
         
     # TODO: Finish exception handling, and maybe change how 1-D noise is handled. That is, if anyone even cares about 1-D noise.
     # Note that out and points must be contiguous tensors. Thanks <3
-    def forward(self, points, out=None):
+    def forward(self, points, out=None, cuda_device=0):
+        torch.cuda.init()
         orig_shape = ()
         if out is not None:
             orig_shape = out.size()
@@ -79,8 +80,8 @@ class NoiseFun:
                 shape = (points.size()[0], self.channels)
             else:
                 shape = (points.size()[0])
-            
-            out = torch.empty(shape).cuda()
+                
+            out = torch.empty(shape, device = "cuda:"+str(cuda_device))
         else:
             out = out.reshape[..., self.channels]
             
@@ -88,11 +89,13 @@ class NoiseFun:
         if out.size()[0] != points.size()[0]:
             raise Exception("Output tensor must have the same length as the input tensor")
             
-        return self.forward_(out, points).reshape(orig_shape)
+        ret = self.forward_(out, points).reshape(orig_shape)
+        torch.cuda.synchronize()
+        return ret
         
     
     
-    def __call__(self, points, out=None):
+    def __call__(self, points, out=None, cuda_device=0):
         return self.forward(points, out)
         
     # TODO: implement operator overloads for + - * / // % **
@@ -119,10 +122,12 @@ class NoiseFun:
             return BinaryOperator(self, other, lambda x,y: x.mul_(y))
         return Amplifier(self, other)
      
-    def __div__(self, other):
+    def __truediv__(self, other):
         if isinstance(other, NoiseFun):
             return BinaryOperator(self, other, lambda x,y: x.div_(y))
         return Amplifier(self, 1.0/other)
+
+
 
 
 
@@ -207,6 +212,14 @@ class NoiseComposition(NoiseFun):
         for c in self.components:
             c.advanceSeed()
 
+class Shifted(NoiseFun):
+    def __init__(self, noiseFunc, shift, cuda_device = 0):
+        self.noiseFunc = noiseFunc
+        self.shift = torch.tensor(shift, dtype=torch.float32, device="cuda:"+str(cuda_device))
+    
+    def forward_(self, out, points):
+        return self.noiseFunc.forward_(out, points + self.shift)
+
 class ScalarAdder(NoiseComposition):
     
     @property
@@ -243,9 +256,6 @@ class Amplifier(NoiseComposition):
         self.noiseFunc.forward_(out, points)
         out *= self.factor
         return out;
-
-
-
 
 class Adder(NoiseComposition):
 
@@ -284,7 +294,8 @@ class BinarySubtractor(NoiseComposition):
         
     def forward_(self, out, points):
         out = self.first.forward_(out, points)
-        temp_out = self.second.forward(points)
+        temp_out = torch.zeros_like(out)
+        temp_out = self.second.forward_(temp_out, points)
         return out.sub_(temp_out)
 
 class BinaryOperator(NoiseComposition):
@@ -311,7 +322,8 @@ class BinaryOperator(NoiseComposition):
         
     def forward_(self, out, points):
         out = self.first.forward_(out, points)
-        temp_out = self.second.forward(points)
+        temp_out = torch.zeros_like(out)
+        temp_out = self.second.forward_(temp_out, points)
         out = self.op(out, temp_out)
         return out
     

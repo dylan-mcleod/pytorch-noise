@@ -4,30 +4,7 @@
 
 #include <torch/types.h>
 
-torch::Tensor eval_range3D(torch::Tensor start, float stepSizeX, float stepSizeY, float stepSizeZ, int stepX, int stepY, int stepZ);
-
-/*
-#define DECL_NOISE_FUN(NAME)\
-torch::Tensor eval_##NAME(torch::Tensor points, torch::Tensor flt_args, torch::Tensor int_args);\
-torch::Tensor eval_##NAME##_(torch::Tensor out, torch::Tensor points, torch::Tensor flt_args, torch::Tensor int_args);
-
-DECL_NOISE_FUN(simplexNoise)
-DECL_NOISE_FUN(checker)
-DECL_NOISE_FUN(spots)
-DECL_NOISE_FUN(worleyNoise)
-DECL_NOISE_FUN(discreteNoise)
-DECL_NOISE_FUN(linearValue)
-DECL_NOISE_FUN(fadedValue)
-DECL_NOISE_FUN(cubicValue)
-DECL_NOISE_FUN(perlinNoise)
-DECL_NOISE_FUN(repeaterPerlin)
-DECL_NOISE_FUN(repeaterPerlinAbs)
-DECL_NOISE_FUN(repeaterSimplex)
-DECL_NOISE_FUN(repeaterSimplexAbs)
-DECL_NOISE_FUN(repeater)
-DECL_NOISE_FUN(fractalSimplex)
-DECL_NOISE_FUN(turbulence)
-DECL_NOISE_FUN(repeaterTurbulence)*/
+torch::Tensor eval_range3D(float startX, float startY, float startZ, float stepSizeX, float stepSizeY, float stepSizeZ, int stepX, int stepY, int stepZ);
 
 
 

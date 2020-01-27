@@ -5,6 +5,7 @@
 #define cudanoise_cuh
 
 #include <cuda_runtime.h>
+#include <cstdint>
 
 namespace cudaNoise {
 
@@ -47,9 +48,27 @@ namespace cudaNoise {
 #define EPSILON 0.000000001f
 
 	// Utility functions
+	
+	__device__ __forceinline__ unsigned int advanceSeed(unsigned int seed) 
+	{
+		return seed + 1;
+	}
 
-	// Hashing function (used for fast on-device pseudorandom numbers for randomness in noise)
-	__device__ unsigned int hash(unsigned unsigned int seed)
+
+	__device__ uint32_t hash(uint32_t x)
+	{
+		x++;
+		x ^= x >> 16;
+		x *= 0x7feb352dU;
+		x ^= x >> 15;
+		x *= 0x846ca68bU;
+		x ^= x >> 16;
+		return x;
+	}
+
+
+/*
+	__device__ unsigned int hash(unsigned int seed)
 	{
 		seed = (seed + 0x7ed55d16) + (seed << 12);
 		seed = (seed ^ 0xc761c23c) ^ (seed >> 19);
@@ -60,9 +79,29 @@ namespace cudaNoise {
 
 		return seed;
 	}
+*/
+	
+	__device__ __forceinline__ uint32_t hash(uint32_t a, uint32_t b)
+	{
+		return hash(hash(a) ^ b);
+	}
+	
+	__device__ __forceinline__ uint32_t hash(uint32_t a, uint32_t b, uint32_t c)
+	{
+		return hash(hash(a, b) ^ c);
+	}
+	
+	__device__ __forceinline__ uint32_t hash(uint32_t a, uint32_t b, uint32_t c, uint32_t d)
+	{
+		return hash(hash(a, b, c) ^ d);
+	}
+	
+	__device__ __forceinline__ uint32_t XORHash(uint32_t a, uint32_t prev) {
+		return hash(a ^ prev);
+	}
 
 	// Returns a random integer between [min, max]
-	__device__ int randomIntRange(int min, int max, unsigned int seed)
+	__device__ __forceinline__ int randomIntRange(int min, int max, unsigned int seed)
 	{
 		int base = hash(seed);
 		base = base % (1 + max - min) + min;
@@ -70,111 +109,91 @@ namespace cudaNoise {
 		return base;
 	}
 
-	// Returns a random float between [0, 1]
-	__device__ float randomFloat(unsigned int seed)
-	{
-		unsigned int noiseVal = hash(seed);
-
-		return ((float)noiseVal / (float)0xffffffffU);
-	}
-	
-	__device__ unsigned int floatToRawIntBits(float flt) {
-		return *reinterpret_cast<unsigned int*>( &flt );
-	}
-	
-	__device__ float randomFloat_(float seed)
-	{
-		unsigned int noiseVal = hash(floatToRawIntBits(seed));
-
-		return ((float)noiseVal / (float)0xffffffffU);
-	}
-	
-	__device__ unsigned int safeUnsignedCast(float seed) {
-		seed = fmod(seed, (float) 0xffffffffU);
-		if (seed < 0)
-			seed += (float) 0xffffffffU;
-		return seed;
-	}
-
 	// Clamps val between [min, max]
 	__device__ float clamp(float val, float min, float max)
 	{
-		if (val < 0.0f)
-			return 0.0f;
-		else if (val > 1.0f)
-			return 1.0f;
+		if (val < min)
+			return min;
+		else if (val > max)
+			return max;
 
 		return val;
 	}
 
 	// Maps from the signed range [0, 1] to unsigned [-1, 1]
 	// NOTE: no clamping
-	__device__ float mapToSigned(float input)
+	__device__ __forceinline__ float mapToSigned(float input)
 	{
 		return input * 2.0f - 1.0f;
 	}
 
 	// Maps from the unsigned range [-1, 1] to signed [0, 1]
 	// NOTE: no clamping
-	__device__ float mapToUnsigned(float input)
+	__device__ __forceinline__ float mapToUnsigned(float input)
 	{
 		return input * 0.5f + 0.5f;
 	}
 
 	// Maps from the signed range [0, 1] to unsigned [-1, 1] with clamping
-	__device__ float clampToSigned(float input)
+	__device__ __forceinline__ float clampToSigned(float input)
 	{
 		return __saturatef(input) * 2.0f - 1.0f;
 	}
 
 	// Maps from the unsigned range [-1, 1] to signed [0, 1] with clamping
-	__device__ float clampToUnsigned(float input)
+	__device__ __forceinline__ float clampToUnsigned(float input)
 	{
 		return __saturatef(input * 0.5f + 0.5f);
 	}
-
-
-	// Random float for a grid coordinate [-1, 1]
-	__device__ float randomGrid(int x, int y, int z, unsigned int seed = 0)
-	{
-		return mapToSigned(randomFloat_(x * 1723.0f + y * 93241.0f + z * 149812.0f + 3824.0f + seed));
+	
+	__device__ __forceinline__ float uint_to_normfloat(uint32_t n) {
+		return ((float) n) / 0xffffffffU;
+	}
+	
+	__device__ __forceinline__ float int_to_normfloat(uint32_t n) {
+		return mapToSigned(uint_to_normfloat(n));
 	}
 
 	// Random unsigned int for a grid coordinate [0, MAXUINT]
-	__device__ unsigned int randomIntGrid(float x, float y, float z, float seed = 0.0f)
+	__device__ __forceinline__ unsigned int randomIntGrid(int x, int y, int z, unsigned int seed = 0)
 	{
-		return hash(floatToRawIntBits(x * 1723.0f + y * 93241.0f + z * 149812.0f + 3824 + seed));
+		return hash(x, y, z, seed);
+	}
+
+	// Random float for a grid coordinate [-1, 1]
+	__device__ __forceinline__ float randomGrid(int x, int y, int z, unsigned int seed = 0)
+	{
+		return int_to_normfloat(randomIntGrid(x,y,z,seed));
 	}
 
 	// Random 3D vector as float3 from grid position
-	__device__ float3 vectorNoise(int x, int y, int z)
+	__device__ __forceinline__ float3 vectorNoise(int x, int y, int z)
 	{
-		return make_float3(randomFloat(x * 8231.0f + y * 34612.0f + z * 11836.0f + 19283.0f) * 2.0f - 1.0f,
-			randomFloat(x * 1171.0f + y * 9234.0f + z * 992903.0f + 1466.0f) * 2.0f - 1.0f,
-			0.0f);
+		int xyz = hash(x,y,z);
+		return make_float3(int_to_normfloat(hash(xyz)), int_to_normfloat(hash(xyz+1)), int_to_normfloat(hash(xyz+2)));
 	}
 
 	// Scale 3D vector by scalar value
-	__device__ float3 scaleVector(float3 v, float factor)
+	__device__ __forceinline__ float3 scaleVector(float3 v, float factor)
 	{
 		return make_float3(v.x * factor, v.y * factor, v.z * factor);
 	}
 
 	// Scale 3D vector by nonuniform parameters
-	__device__ float3 nonuniformScaleVector(float3 v, float xf, float yf, float zf)
+	__device__ __forceinline__ float3 nonuniformScaleVector(float3 v, float xf, float yf, float zf)
 	{
 		return make_float3(v.x * xf, v.y * yf, v.z * zf);
 	}
 
 
 	// Adds two 3D vectors
-	__device__ float3 addVectors(float3 v, float3 w)
+	__device__ __forceinline__ float3 addVectors(float3 v, float3 w)
 	{
 		return make_float3(v.x + w.x, v.y + w.y, v.z + w.z);
 	}
 
 	// Dot product between two vectors
-	__device__ float dotProduct(float3 u, float3 v)
+	__device__ __forceinline__ float dotProduct(float3 u, float3 v)
 	{
 		return (u.x * v.x + u.y * v.y + u.z * v.z);
 	}
@@ -372,10 +391,10 @@ namespace cudaNoise {
 		int iy = (int)(pos.y * scale);
 		int iz = (int)(pos.z * scale);
 
-		float u = pos.x - (float)ix;
-		float v = pos.y - (float)iy;
-		float w = pos.z - (float)iz;
-
+		float u = pos.x*scale - (float)ix - 0.5f + jitter / 2.0f;
+		float v = pos.y*scale - (float)iy - 0.5f + jitter / 2.0f;
+		float w = pos.z*scale - (float)iz - 0.5f + jitter / 2.0f;
+		
 		float val = -1.0f;
 
 		// We need to traverse the entire 3x3x3 neighborhood in case there are spots in neighbors near the edges of the cell
@@ -385,13 +404,13 @@ namespace cudaNoise {
 			{
 				for (int z = -1; z < 2; z++)
 				{
-					int numSpots = randomIntRange(minNum, maxNum, seed + (ix + x) * 823746.0f + (iy + y) * 12306.0f + (iz + z) * 823452.0f + 3234874.0f);
-
-					for (int i = 0; i < numSpots; i++)
-					{
-						float distU = u - (x + 0.5f) - (randomFloat(seed + (ix + x) * 23784.0f + (iy + y) * 9183.0f   + (iz + z) * 104743.0f + i * 27432.0f)  * jitter - jitter / 2.0f);
-						float distV = v - (y + 0.5f) - (randomFloat(seed + (ix + x) * 12743.0f + (iy + y) * 45191.0f  + (iz + z) * 144421.0f + i * 76671.0f)  * jitter - jitter / 2.0f);
-						float distW = w - (z + 0.5f) - (randomFloat(seed + (ix + x) * 82734.0f + (iy + y) * 900213.0f + (iz + z) * 443241.0f + i * 199823.0f) * jitter - jitter / 2.0f);
+					int xyzs = hash(ix+x, iy+y, iz+z, seed);
+					int numPoints = randomIntRange(minNum, maxNum, hash(xyzs));
+					for (int i = 1; i < numPoints*3+1; i+=3)
+					{	
+						float distU = u - x - uint_to_normfloat(hash(i ^ xyzs)) * jitter;
+						float distV = v - y - uint_to_normfloat(hash((i+1) ^ xyzs)) * jitter;
+						float distW = w - z - uint_to_normfloat(hash((i+2) ^ xyzs)) * jitter;
 
 						float distanceSq = distU * distU + distV * distV + distW * distW;
 						float distanceAbs = 0.0f;
@@ -428,12 +447,11 @@ namespace cudaNoise {
 		int iy = (int)(pos.y * scale);
 		int iz = (int)(pos.z * scale);
 
-		float u = pos.x*scale - (float)ix;
-		float v = pos.y*scale - (float)iy;
-		float w = pos.z*scale - (float)iz;
+		float u = pos.x*scale - (float)ix - 0.5f + jitter / 2.0f;
+		float v = pos.y*scale - (float)iy - 0.5f + jitter / 2.0f;
+		float w = pos.z*scale - (float)iz - 0.5f + jitter / 2.0f;
 
 		float minDist = 1000000.0f;
-
 		// Traverse the whole 3x3 neighborhood looking for the closest feature point
 		for (int x = -rad; x <= rad; x++)
 		{
@@ -441,13 +459,13 @@ namespace cudaNoise {
 			{
 				for (int z = -rad; z <= rad; z++)
 				{
-					int numPoints = randomIntRange(minNum, maxNum, seed + (ix + x) * 823746.0f + (iy + y) * 12306.0f + (iz + z) * 67262.0f);
-
-					for (int i = 0; i < numPoints; i++)
-					{
-						float distU = u - (x + 0.5f) - (randomFloat(seed + (ix + x) * 23784.0f + (iy + y) * 9183.0f   + (iz + z) * 104743.0f + i * 27432.0f)  * jitter - jitter / 2.0f);
-						float distV = v - (y + 0.5f) - (randomFloat(seed + (ix + x) * 12743.0f + (iy + y) * 45191.0f  + (iz + z) * 144421.0f + i * 76671.0f)  * jitter - jitter / 2.0f);
-						float distW = w - (z + 0.5f) - (randomFloat(seed + (ix + x) * 82734.0f + (iy + y) * 900213.0f + (iz + z) * 443241.0f + i * 199823.0f) * jitter - jitter / 2.0f);
+					int xyzs = hash(ix+x, iy+y, iz+z, seed);
+					int numPoints = randomIntRange(minNum, maxNum, hash(xyzs));
+					for (int i = 1; i < numPoints*3+1; i+=3)
+					{	
+						float distU = u - x - uint_to_normfloat(hash(i ^ xyzs)) * jitter;
+						float distV = v - y - uint_to_normfloat(hash((i+1) ^ xyzs)) * jitter;
+						float distW = w - z - uint_to_normfloat(hash((i+2) ^ xyzs)) * jitter;
 
 						float distanceSq = distU * distU + distV * distV + distW * distW;
 
@@ -523,8 +541,6 @@ namespace cudaNoise {
 	// Linear value noise
 	__device__ float linearValue(float3 pos, float scale, unsigned int seed)
 	{
-		float fseed = (float)seed;
-
 		int ix = (int)pos.x;
 		int iy = (int)pos.y;
 		int iz = (int)pos.z;
@@ -534,14 +550,14 @@ namespace cudaNoise {
 		float w = pos.z - iz;
 
 		// Corner values
-		float a000 = randomGrid(ix, iy, iz, fseed);
-		float a100 = randomGrid(ix + 1, iy, iz, fseed);
-		float a010 = randomGrid(ix, iy + 1, iz, fseed);
-		float a110 = randomGrid(ix + 1, iy + 1, iz, fseed);
-		float a001 = randomGrid(ix, iy, iz + 1, fseed);
-		float a101 = randomGrid(ix + 1, iy, iz + 1, fseed);
-		float a011 = randomGrid(ix, iy + 1, iz + 1, fseed);
-		float a111 = randomGrid(ix + 1, iy + 1, iz + 1, fseed);
+		float a000 = randomGrid(ix, iy, iz, seed);
+		float a100 = randomGrid(ix + 1, iy, iz, seed);
+		float a010 = randomGrid(ix, iy + 1, iz, seed);
+		float a110 = randomGrid(ix + 1, iy + 1, iz, seed);
+		float a001 = randomGrid(ix, iy, iz + 1, seed);
+		float a101 = randomGrid(ix + 1, iy, iz + 1, seed);
+		float a011 = randomGrid(ix, iy + 1, iz + 1, seed);
+		float a111 = randomGrid(ix + 1, iy + 1, iz + 1, seed);
 
 		// Linear interpolation
 		float x00 = lerp(a000, a100, u);
@@ -558,8 +574,6 @@ namespace cudaNoise {
 	// Linear value noise smoothed with Perlin's fade function
 	__device__ float fadedValue(float3 pos, float scale, unsigned int seed)
 	{
-		float fseed = (float)seed;
-
 		int ix = (int)(pos.x * scale);
 		int iy = (int)(pos.y * scale);
 		int iz = (int)(pos.z * scale);
@@ -569,14 +583,14 @@ namespace cudaNoise {
 		float w = fade(pos.z - iz);
 
 		// Corner values
-		float a000 = randomGrid(ix, iy, iz, fseed);
-		float a100 = randomGrid(ix + 1, iy, iz, fseed);
-		float a010 = randomGrid(ix, iy + 1, iz, fseed);
-		float a110 = randomGrid(ix + 1, iy + 1, iz, fseed);
-		float a001 = randomGrid(ix, iy, iz + 1, fseed);
-		float a101 = randomGrid(ix + 1, iy, iz + 1, fseed);
-		float a011 = randomGrid(ix, iy + 1, iz + 1, fseed);
-		float a111 = randomGrid(ix + 1, iy + 1, iz + 1, fseed);
+		float a000 = randomGrid(ix, iy, iz, seed);
+		float a100 = randomGrid(ix + 1, iy, iz, seed);
+		float a010 = randomGrid(ix, iy + 1, iz, seed);
+		float a110 = randomGrid(ix + 1, iy + 1, iz, seed);
+		float a001 = randomGrid(ix, iy, iz + 1, seed);
+		float a101 = randomGrid(ix + 1, iy, iz + 1, seed);
+		float a011 = randomGrid(ix, iy + 1, iz + 1, seed);
+		float a111 = randomGrid(ix + 1, iy + 1, iz + 1, seed);
 
 		// Linear interpolation
 		float x00 = lerp(a000, a100, u);
@@ -611,8 +625,6 @@ namespace cudaNoise {
 	// Perlin gradient noise
 	__device__ float perlinNoise(float3 pos, float scale, unsigned int seed)
 	{
-		float fseed = (float)seed;
-
 		pos.x = pos.x * scale;
 		pos.y = pos.y * scale;
 		pos.z = pos.z * scale;
@@ -633,14 +645,14 @@ namespace cudaNoise {
 		float w = fade(pos.z);
 
 		// influence values
-		float i000 = grad(randomIntGrid(ix, iy, iz, fseed), pos.x, pos.y, pos.z);
-		float i100 = grad(randomIntGrid(ix + 1.0f, iy, iz, fseed), pos.x - 1.0f, pos.y, pos.z);
-		float i010 = grad(randomIntGrid(ix, iy + 1.0f, iz, fseed), pos.x, pos.y - 1.0f, pos.z);
-		float i110 = grad(randomIntGrid(ix + 1.0f, iy + 1.0f, iz, fseed), pos.x - 1.0f, pos.y - 1.0f, pos.z);
-		float i001 = grad(randomIntGrid(ix, iy, iz + 1.0f, fseed), pos.x, pos.y, pos.z - 1.0f);
-		float i101 = grad(randomIntGrid(ix + 1.0f, iy, iz + 1.0f, fseed), pos.x - 1.0f, pos.y, pos.z - 1.0f);
-		float i011 = grad(randomIntGrid(ix, iy + 1.0f, iz + 1.0f, fseed), pos.x, pos.y - 1.0f, pos.z - 1.0f);
-		float i111 = grad(randomIntGrid(ix + 1.0f, iy + 1.0f, iz + 1.0f, fseed), pos.x - 1.0f, pos.y - 1.0f, pos.z - 1.0f);
+		float i000 = grad(randomIntGrid(ix, iy, iz, seed), pos.x, pos.y, pos.z);
+		float i100 = grad(randomIntGrid(ix + 1, iy, iz, seed), pos.x - 1.0f, pos.y, pos.z);
+		float i010 = grad(randomIntGrid(ix, iy + 1, iz, seed), pos.x, pos.y - 1.0f, pos.z);
+		float i110 = grad(randomIntGrid(ix + 1, iy + 1, iz, seed), pos.x - 1.0f, pos.y - 1.0f, pos.z);
+		float i001 = grad(randomIntGrid(ix, iy, iz + 1, seed), pos.x, pos.y, pos.z - 1.0f);
+		float i101 = grad(randomIntGrid(ix + 1, iy, iz + 1, seed), pos.x - 1.0f, pos.y, pos.z - 1.0f);
+		float i011 = grad(randomIntGrid(ix, iy + 1, iz + 1, seed), pos.x, pos.y - 1.0f, pos.z - 1.0f);
+		float i111 = grad(randomIntGrid(ix + 1, iy + 1, iz + 1, seed), pos.x - 1.0f, pos.y - 1.0f, pos.z - 1.0f);
 
 		// interpolation
 		float x00 = lerp(i000, i100, u);
@@ -670,7 +682,7 @@ namespace cudaNoise {
 			acc += FUNC(make_float3(pos.x * scale, pos.y * scale, pos.z * scale), 1.0f, seed) * amp;\
 			scale *= lacunarity;\
 			amp *= decay;\
-			seed = hash(seed);\
+			seed = advanceSeed(seed);\
 		}\
 		\
 		return acc / div;\
@@ -689,7 +701,7 @@ namespace cudaNoise {
 			acc += fabsf( FUNC(make_float3(pos.x * scale, pos.y * scale, pos.z * scale), 1.0f, seed)) * amp;\
 			scale *= lacunarity;\
 			amp *= decay;\
-			seed = hash(seed);\
+			seed = advanceSeed(seed);\
 		}\
 		\
 		return mapToSigned(acc) / div;\
@@ -710,7 +722,7 @@ namespace cudaNoise {
 			acc += FUNC(make_float3(pos.x * scale, pos.y * scale, pos.z * scale), 1.0f, seed) * amp;\
 			scale *= lacunarity;\
 			amp *= decay;\
-			seed = hash(seed);\
+			seed = advanceSeed(seed);\
 			\
 			if (scale > rdu)\
 				break;\
@@ -775,7 +787,7 @@ namespace cudaNoise {
 
 			scale *= lacunarity;
 			amp *= decay;
-			seed = hash(seed);
+			seed = advanceSeed(seed);
 		}
 
 		return acc / div;

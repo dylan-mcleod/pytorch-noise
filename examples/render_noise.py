@@ -33,7 +33,7 @@ def FPSCounter():
     return getFPS
     
 
-def render_noise(noiseFuncs, start, update, step_size, steps):
+def render_noise(noiseFuncs, start, update, step_size, steps, cuda_device=0):
     """
     Render some 2D noise function over the given range
     """
@@ -45,11 +45,11 @@ def render_noise(noiseFuncs, start, update, step_size, steps):
         nonlocal noiseFuncs, start, update, step_size, steps
     
         # Temporary solution, for not having a range2D function :3
-        points = range3D(start, step_size, (steps[0], steps[1], 1)).reshape(steps[0], steps[1], 3)
+        points = range3D(start, (step_size[0], step_size[1], 1.0), (steps[0], steps[1], 1)).reshape(steps[0], steps[1], 3)
         
         outs = []
         for n in noiseFuncs:
-            outs.append((  n(points).atan()  )*0.5+0.5)
+            outs.append((  n(points, cuda_device=cuda_device).atan()  )*0.5+0.5)
             #print(outs[-1].size())
             #print(torch.min(outs[-1]), torch.max(outs[-1]))
             outs.append(torch.zeros(steps[0],1).cuda())
@@ -69,6 +69,11 @@ def render_noise(noiseFuncs, start, update, step_size, steps):
             return False
         else:
             return True
+        
+        return True
+    
+    # run once before benchmarking, as the first iteration is sure to be slower
+    innerLoop()
     
     innerLoop = benchmark(innerLoop)
     counter = FPSCounter()
